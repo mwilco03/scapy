@@ -91,6 +91,8 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
         IOCRReference=1,
         SendClockFactor=2,           # 2ms
         ReductionRatio=32,            # 32 cycles
+        WatchdogFactor=3,            # Watchdog timeout multiplier
+        DataHoldFactor=3,            # Data hold timeout multiplier
         DataLength=40,                # Total data length
         FrameID=0x8001,              # Input frame ID
         APIs=[
@@ -114,6 +116,8 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
         IOCRReference=2,
         SendClockFactor=2,
         ReductionRatio=32,
+        WatchdogFactor=3,            # Watchdog timeout multiplier
+        DataHoldFactor=3,            # Data hold timeout multiplier
         DataLength=40,
         FrameID=0x8000,              # Output frame ID
         APIs=[
@@ -223,10 +227,12 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
 
     print(f"[INFO] Expected Submodule Blocks created")
 
-    # Build PNIO Service Request
+    # Build PNIO Service Request PDU with args_max
     pnio_req = PNIOServiceReqPDU(
+        args_max=16696,  # Maximum argument size
         blocks=[ar_block, iocr_input, iocr_output, alarm_cr] + expected_submodules
     )
+    pnio_req.max_count = 16696  # Set max count
 
     # Build DCE/RPC header
     dce_rpc = DceRpc4(
@@ -234,7 +240,8 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
         opnum=0,                             # 0 = Connect
         seqnum=0,
         object=object_uuid_str,              # Object UUID
-        act_id=str(activity_uuid)            # Activity UUID
+        act_id=str(activity_uuid),           # Activity UUID
+        if_id="dea00001-6c97-11d1-8271-00a02442df7d"  # PROFINET Device Interface UUID (CRITICAL!)
     )
 
     return dce_rpc, pnio_req
