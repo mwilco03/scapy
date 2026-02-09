@@ -276,7 +276,8 @@ def main():
     print(f"\n[INFO] === Building RPC Connect ===\n")
 
     # Build RPC Connect using proper Scapy layers
-    controller_name = "plc-1"  # Controller's station name
+    import socket
+    controller_name = socket.gethostname()  # Controller's station name (e.g., "rtu-967e")
     dce_rpc, pnio_req = build_rpc_connect_proper(
         controller_mac, args.device_mac,
         args.device_name, controller_name, rtu_config
