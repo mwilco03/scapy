@@ -291,7 +291,7 @@ def main():
 
     print(f"\n[INFO] === Packet Structure ===")
     print(f"Total size: {len(packet)} bytes")
-    print(f"Layers: {' / '.join([layer.name for layer in packet.layers()])}")
+    print(f"Layers: {' / '.join([layer.__class__.__name__ for layer in packet.layers()])}")
 
     print(f"\n[INFO] Packet hex dump:")
     hexdump(packet)
