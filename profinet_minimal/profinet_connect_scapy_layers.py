@@ -228,9 +228,10 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
     print(f"[INFO] Expected Submodule Blocks created")
 
     # Build PNIO Service Request PDU with args_max
+    # Block order: AR → Alarm CR → Input IOCR → Output IOCR → Expected Submodule (matches GitHub working implementation)
     pnio_req = PNIOServiceReqPDU(
         args_max=16696,  # Maximum argument size
-        blocks=[ar_block, iocr_input, iocr_output, alarm_cr] + expected_submodules
+        blocks=[ar_block, alarm_cr, iocr_input, iocr_output] + expected_submodules
     )
     pnio_req.max_count = 16696  # Set max count
 
