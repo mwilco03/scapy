@@ -68,8 +68,8 @@ def check_rtu_config(device_ip: str) -> dict:
     print(f"[INFO] === Checking RTU Configuration ===")
 
     try:
-        # Check slots API
-        response = requests.get(f"http://{device_ip}:9081/api/v1/slots", timeout=2)
+        # Check slots API (corrected endpoint)
+        response = requests.get(f"http://{device_ip}:9081/slots", timeout=2)
         if response.status_code == 200:
             config = response.json()
             print(f"[INFO] RTU Configuration:")
