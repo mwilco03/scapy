@@ -211,28 +211,64 @@ def build_connect_diagnostic(controller_ip: str, controller_mac: str,
     print(f"[INFO] Alarm CR: {len(alarm_cr)} bytes")
 
     # ===== Expected Submodule =====
-    # Use module config from RTU if available
-    if module_config and module_config.get('slot_count', 0) > 0:
-        print(f"[INFO] Using actual RTU configuration:")
-        for slot in module_config.get('slots', []):
-            print(f"[INFO]   Slot {slot['slot']}.{slot['subslot']}: "
-                  f"Module=0x{slot['module_ident']:02X}, Submodule=0x{slot['submodule_ident']:02X}")
+    # Build based on actual RTU configuration
+    print(f"\n[INFO] Building Expected Submodule Block:")
 
-    exp_sub = struct.pack('>HH', 0x0104, 0x003A)
-    exp_sub += struct.pack('BB', 0x01, 0x00)
+    # Start with header
+    exp_sub = struct.pack('>HH', 0x0104, 0)  # Block type, length (will update)
+    exp_sub += struct.pack('BB', 0x01, 0x00)  # Version
     exp_sub += struct.pack('>H', 0x0001)  # Number of APIs
     exp_sub += struct.pack('>I', 0x00000000)  # API 0
-    exp_sub += struct.pack('>H', 0x0002)  # Slot count
-    exp_sub += struct.pack('>HH', 0x0000, 0x0001)  # Slot 0 (DAP)
-    exp_sub += struct.pack('>HH', 0x0001, 0x0001)  # Subslot 1
-    exp_sub += struct.pack('>I', 0x00000001)  # Module ID (DAP)
-    exp_sub += struct.pack('>H', 0x0040)  # Properties
-    exp_sub += struct.pack('>H', 0x0001)  # Data length
-    exp_sub += struct.pack('>HH', 0x0001, 0x0041)  # Input/output
-    exp_sub = exp_sub.ljust(62, b'\x00')
 
-    print(f"[INFO] Expected Submodule: {len(exp_sub)} bytes")
-    print(f"[INFO]   Expecting: Slot 0.1 (DAP)")
+    # Count slots: DAP (slot 0) + application slots
+    num_slots = 1  # DAP
+    if module_config and module_config.get('slot_count', 0) > 0:
+        num_slots += module_config['slot_count']
+
+    exp_sub += struct.pack('>H', num_slots)  # Slot count
+
+    # Slot 0: DAP (always required)
+    print(f"[INFO]   Slot 0.1: DAP (Module=0x00000001, Submodule=0x00000001)")
+    exp_sub += struct.pack('>H', 0x0000)  # Slot number: 0
+    exp_sub += struct.pack('>H', 0x0001)  # Subslot count
+    exp_sub += struct.pack('>H', 0x0001)  # Subslot number: 1
+    exp_sub += struct.pack('>I', 0x00000001)  # Module ident: DAP
+    exp_sub += struct.pack('>I', 0x00000001)  # Submodule ident: DAP
+    exp_sub += struct.pack('>HHH', 0x0000, 0x0000, 0x0000)  # Input length, Output length, Properties
+
+    # Add application slots from RTU config
+    if module_config and module_config.get('slot_count', 0) > 0:
+        for slot_info in module_config['slots']:
+            slot_num = slot_info['slot']
+            subslot_num = slot_info['subslot']
+            module_ident = slot_info['module_ident']
+            submodule_ident = slot_info['submodule_ident']
+            data_size = slot_info.get('data_size', 0)
+            direction = slot_info.get('direction', 'input')
+
+            print(f"[INFO]   Slot {slot_num}.{subslot_num}: Module=0x{module_ident:08X}, Submodule=0x{submodule_ident:08X}")
+
+            exp_sub += struct.pack('>H', slot_num)  # Slot number
+            exp_sub += struct.pack('>H', 0x0001)  # Subslot count
+            exp_sub += struct.pack('>H', subslot_num)  # Subslot number
+            exp_sub += struct.pack('>I', module_ident)  # Module ident
+            exp_sub += struct.pack('>I', submodule_ident)  # Submodule ident
+
+            # Input/Output data lengths
+            if direction == 'input':
+                exp_sub += struct.pack('>H', data_size)  # Input length
+                exp_sub += struct.pack('>H', 0x0000)  # Output length
+            else:
+                exp_sub += struct.pack('>H', 0x0000)  # Input length
+                exp_sub += struct.pack('>H', data_size)  # Output length
+
+            exp_sub += struct.pack('>H', 0x0000)  # Properties
+
+    # Update block length (total length - 4 byte header)
+    block_length = len(exp_sub) - 4
+    exp_sub = exp_sub[:2] + struct.pack('>H', block_length) + exp_sub[4:]
+
+    print(f"[INFO] Expected Submodule Block: {len(exp_sub)} bytes total")
 
     # ===== Assemble =====
     pnio_data = ar_block + iocr_input + iocr_output + alarm_cr + exp_sub
