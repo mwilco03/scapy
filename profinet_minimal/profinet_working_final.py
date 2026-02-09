@@ -95,8 +95,9 @@ def parse_dcp_response(pkt) -> Optional[DCPDevice]:
     vendor_id = None
     device_id = None
 
-    # Parse DCP blocks starting at offset 10
-    offset = 10
+    # Parse DCP blocks starting at offset 12
+    # Structure: FrameID(2) + ServiceID(1) + ServiceType(1) + XID(4) + Reserved(2) + DataLen(2) = 12 bytes
+    offset = 12
 
     while offset + 4 <= len(data):
         try:
