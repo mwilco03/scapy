@@ -52,8 +52,9 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
     activity_uuid = uuid.uuid4()
     object_uuid = uuid.uuid4()
 
-    # Ensure object UUID starts with proper PROFINET prefix
-    object_uuid_str = f"dea00000-6c97-11d1-8271-{object_uuid.hex[24:]}"
+    # Ensure object UUID starts with proper PROFINET prefix (dea00000-6c97-11d1-8271-xxxxxxxxxxxx)
+    # Use the last 12 hex characters from a random UUID
+    object_uuid_str = f"dea00000-6c97-11d1-8271-{object_uuid.hex[20:32]}"
 
     print(f"[INFO] AR UUID: {ar_uuid}")
     print(f"[INFO] Activity UUID: {activity_uuid}")
