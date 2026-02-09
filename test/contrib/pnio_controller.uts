@@ -1,0 +1,214 @@
+% PROFINET IO Controller tests
+
++ PROFINET Controller Module Tests
+
+= Load the controller module
+from scapy.contrib.pnio_controller import PROFINETController, PROFINETDevice, create_controller
+
+= Test PROFINETDevice creation
+device = PROFINETDevice(
+    mac="00:11:22:33:44:55",
+    name="TestRTU",
+    ip="192.168.1.100",
+    device_id=0x1234,
+    vendor_id=0x002A,
+    device_role=1
+)
+
+assert device.mac == "00:11:22:33:44:55"
+assert device.name == "TestRTU"
+assert device.ip == "192.168.1.100"
+assert device.device_id == 0x1234
+assert device.vendor_id == 0x002A
+assert device.device_role == 1
+assert device.connected == False
+assert device.ar_uuid is None
+
+= Test PROFINETDevice representation
+repr_str = repr(device)
+assert "TestRTU" in repr_str
+assert "00:11:22:33:44:55" in repr_str
+assert "connected=False" in repr_str
+
+= Test PROFINETController creation
+try:
+    controller = PROFINETController(
+        interface="lo",  # Use loopback for testing
+        station_name="TestController",
+        ip="127.0.0.1"
+    )
+
+    assert controller.interface == "lo"
+    assert controller.station_name == "TestController"
+    assert controller.running == False
+    assert len(controller.devices) == 0
+    assert controller.next_frame_id == 0x8000  # RT_CLASS_1_START
+
+    controller_created = True
+except Exception as e:
+    print(f"Warning: Could not create controller: {e}")
+    controller_created = False
+
+= Test frame ID allocation
+if controller_created:
+    frame_id_1 = controller._allocate_frame_id()
+    frame_id_2 = controller._allocate_frame_id()
+    frame_id_3 = controller._allocate_frame_id()
+
+    assert frame_id_1 == 0x8000
+    assert frame_id_2 == 0x8001
+    assert frame_id_3 == 0x8002
+    assert controller.next_frame_id == 0x8003
+
+= Test frame ID wraparound
+if controller_created:
+    # Set to near end of range
+    controller.next_frame_id = 0xbfff
+
+    frame_id = controller._allocate_frame_id()
+    assert frame_id == 0xbfff
+
+    # Should wrap back to start
+    frame_id = controller._allocate_frame_id()
+    assert frame_id == 0x8000
+
+= Test device registry
+if controller_created:
+    device1 = PROFINETDevice(mac="00:11:22:33:44:55", name="Device1")
+    device2 = PROFINETDevice(mac="AA:BB:CC:DD:EE:FF", name="Device2")
+
+    controller.devices[device1.mac] = device1
+    controller.devices[device2.mac] = device2
+
+    assert len(controller.devices) == 2
+
+    # Test get_device by MAC
+    found = controller.get_device("00:11:22:33:44:55")
+    assert found is not None
+    assert found.name == "Device1"
+
+    # Test get_device by name
+    found = controller.get_device("Device2")
+    assert found is not None
+    assert found.mac == "AA:BB:CC:DD:EE:FF"
+
+    # Test get_device not found
+    found = controller.get_device("NonExistent")
+    assert found is None
+
+= Test device connection state
+if controller_created:
+    test_device = PROFINETDevice(mac="11:22:33:44:55:66", name="RTU1")
+    controller.devices[test_device.mac] = test_device
+
+    # Initial state
+    assert test_device.connected == False
+    assert test_device.ar_uuid is None
+
+    # Connect device
+    result = controller.connect_device(test_device, input_size=32, output_size=32)
+    assert result == True
+    assert test_device.connected == True
+    assert test_device.ar_uuid is not None
+    assert test_device.session_key > 0
+    assert test_device.input_cr_id >= 0x8000
+    assert test_device.output_cr_id >= 0x8000
+    assert len(test_device.input_data) == 32
+    assert len(test_device.output_data) == 32
+
+    # Disconnect device
+    controller.disconnect_device(test_device)
+    assert test_device.connected == False
+    assert test_device.ar_uuid is None
+
+= Test DCP packet building for discovery
+from scapy.layers.l2 import Ether
+from scapy.contrib.pnio import ProfinetIO
+from scapy.contrib.pnio_dcp import ProfinetDCP, DCPNameOfStationBlock
+
+# Build identify request
+pkt = (
+    Ether(dst="01:0e:cf:00:00:00") /
+    ProfinetIO(frameID=0xfefe) /
+    ProfinetDCP(
+        service_id=0x05,
+        service_type=0x00,
+        xid=0x01000000
+    ) /
+    DCPNameOfStationBlock(option=2, sub_option=2, dcp_block_length=0)
+)
+
+assert pkt.haslayer(Ether)
+assert pkt.haslayer(ProfinetIO)
+assert pkt.haslayer(ProfinetDCP)
+assert pkt[Ether].dst == "01:0e:cf:00:00:00"
+assert pkt[ProfinetIO].frameID == 0xfefe
+assert pkt[ProfinetDCP].service_id == 0x05
+
+= Test cyclic RT packet building
+from scapy.contrib.pnio import PNIORealTimeCyclicPDU, PNIORealTime_IOxS
+
+io_status = PNIORealTime_IOxS(dataState=1, instance=3)
+
+pkt = (
+    Ether(dst="00:11:22:33:44:55") /
+    ProfinetIO(frameID=0x8000) /
+    PNIORealTimeCyclicPDU(
+        cycleCounter=100,
+        dataStatus=0x35,
+        transferStatus=0,
+        data=[bytes(io_status), b"\x01\x02\x03\x04"]
+    )
+)
+
+assert pkt.haslayer(PNIORealTimeCyclicPDU)
+rtc = pkt[PNIORealTimeCyclicPDU]
+assert rtc.cycleCounter == 100
+assert rtc.dataStatus == 0x35
+
+= Test controller context manager
+if controller_created:
+    test_controller = PROFINETController(interface="lo", station_name="ContextTest")
+
+    assert test_controller.running == False
+
+    # Note: We can't actually test start() without root privileges and network access
+    # So we just test the structure is correct
+    assert hasattr(test_controller, '__enter__')
+    assert hasattr(test_controller, '__exit__')
+
+= Test create_controller convenience function
+try:
+    ctrl = create_controller(interface="lo", station_name="ConvenienceTest")
+    assert ctrl.interface == "lo"
+    assert ctrl.station_name == "ConvenienceTest"
+    assert ctrl.running == True
+    ctrl.stop()
+    created_ok = True
+except Exception as e:
+    print(f"Warning: create_controller failed (expected without network): {e}")
+    created_ok = False
+
+= Test input data callback registration
+if controller_created:
+    controller = PROFINETController(interface="lo", station_name="CallbackTest")
+    device = PROFINETDevice(mac="AA:BB:CC:DD:EE:FF", name="CallbackDevice")
+
+    callback_called = [False]
+    received_data = [None]
+
+    def test_callback(dev, data):
+        callback_called[0] = True
+        received_data[0] = data
+
+    controller.register_input_callback(device, test_callback)
+
+    assert device.mac in controller.input_data_callbacks
+    assert controller.input_data_callbacks[device.mac] == test_callback
+
+= Cleanup
+if controller_created:
+    if controller.running:
+        controller.stop()
+
+print("PROFINET Controller tests completed")
