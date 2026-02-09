@@ -274,18 +274,29 @@ def build_connect_diagnostic(controller_ip: str, controller_mac: str,
     pnio_data = ar_block + iocr_input + iocr_output + alarm_cr + exp_sub
     rpc_payload = rpc_header + ndr_header + pnio_data
 
+    # Build complete Ethernet frame for Layer 2 send
     packet = (
+        Ether(src=controller_mac_bytes.hex(':'), dst=device_mac_bytes.hex(':')) /
         IP(src=controller_ip, dst=device_ip) /
         UDP(sport=34964, dport=34964) /
         Raw(load=rpc_payload)
     )
 
     print(f"\n[INFO] Total packet size: {len(packet)} bytes")
+    print(f"[INFO]   Ethernet: 14 bytes")
+    print(f"[INFO]   IP: {len(packet[IP])} bytes (header + payload)")
+    print(f"[INFO]   UDP: 8 bytes header")
     print(f"[INFO]   RPC Header: 80 bytes")
     print(f"[INFO]   NDR Header: 20 bytes")
     print(f"[INFO]   PNIO Blocks: {len(pnio_data)} bytes")
 
-    return bytes(packet)
+    # Show hex dump of RPC payload
+    print(f"\n[INFO] RPC Payload hex dump (first 80 bytes):")
+    for i in range(0, min(80, len(rpc_payload)), 16):
+        hex_str = ' '.join(f'{b:02x}' for b in rpc_payload[i:i+16])
+        print(f"[INFO]   {i:04x}: {hex_str}")
+
+    return packet
 
 
 def main():
@@ -313,31 +324,47 @@ def main():
     # Check RTU config
     rtu_config = check_rtu_config(args.device_ip)
 
-    # Build packet with diagnostics
-    packet_bytes = build_connect_diagnostic(
+    # Build packet with diagnostics (returns Ether frame)
+    packet = build_connect_diagnostic(
         controller_ip, controller_mac,
         args.device_ip, device_mac, args.device_name,
         rtu_config
     )
 
-    packet = IP(packet_bytes[14:])
-
     print(f"\n[INFO] === Sending RPC Connect ===")
-    print(f"[INFO] From: {controller_ip}:{34964}")
-    print(f"[INFO] To: {args.device_ip}:{34964}")
+    print(f"[INFO] Interface: {args.interface}")
+    print(f"[INFO] From: {controller_mac} ({controller_ip}:34964)")
+    print(f"[INFO] To: {device_mac} ({args.device_ip}:34964)")
+
+    print(f"\n[INFO] Complete packet hex dump:")
+    hexdump(packet)
+
     print(f"\n[INFO] Watch RTU logs with:")
     print(f"[INFO]   ssh root@{args.device_ip}")
     print(f"[INFO]   journalctl -u water-rtu-manager -f | grep -E 'CALLBACK|exp_module|device_access'")
-    print(f"\n[INFO] Sending...")
+    print(f"\n[INFO] Sending via Layer 2 (Ethernet frame)...")
 
-    response = sr1(packet, iface=args.interface, timeout=args.timeout, verbose=0)
+    # Use srp() for Layer 2 send (Ethernet frame)
+    answered, unanswered = srp(packet, iface=args.interface, timeout=args.timeout, verbose=1)
 
-    if response:
+    if answered:
+        response = answered[0][1]
+
+    if answered:
         print(f"\n[INFO] ✓✓✓ RECEIVED RESPONSE! ✓✓✓")
+        print(f"[INFO] Received {len(answered)} response(s)")
         response.show()
         print(f"\n[INFO] Response hex dump:")
         hexdump(response)
-        sys.exit(0)
+
+        # Check if it's a valid RPC response
+        if UDP in response and response[UDP].sport == 34964:
+            print(f"\n[INFO] ✓✓✓ VALID RPC RESPONSE FROM RTU! ✓✓✓")
+            print(f"[INFO] RTU accepted the Connect request!")
+            sys.exit(0)
+        else:
+            print(f"\n[WARNING] Received response but not from UDP 34964")
+            sys.exit(1)
     else:
         print(f"\n[ERROR] ✗ No response (timeout)")
         print(f"\n[INFO] === Diagnostic Checklist ===")
