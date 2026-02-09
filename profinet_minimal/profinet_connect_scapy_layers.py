@@ -40,7 +40,7 @@ def get_rtu_config(device_ip: str) -> dict:
 
 
 def build_rpc_connect_proper(controller_mac: str, device_mac: str,
-                             device_name: str, rtu_config: dict) -> tuple:
+                             device_name: str, controller_name: str, rtu_config: dict) -> tuple:
     """
     Build RPC Connect using PROPER Scapy layers
 
@@ -66,7 +66,7 @@ def build_rpc_connect_proper(controller_mac: str, device_mac: str,
         ARUUID=str(ar_uuid),
         SessionKey=0,
         CMInitiatorMacAdd=controller_mac,
-        CMInitiatorStationName=device_name,
+        CMInitiatorStationName=controller_name,  # Controller's name, not device's!
         CMInitiatorObjectUUID=object_uuid_str,
         ARProperties_ParametrizationServer='CM_Initator',  # Note: typo is in spec
         ARProperties_State='Active'
@@ -276,9 +276,10 @@ def main():
     print(f"\n[INFO] === Building RPC Connect ===\n")
 
     # Build RPC Connect using proper Scapy layers
+    controller_name = "plc-1"  # Controller's station name
     dce_rpc, pnio_req = build_rpc_connect_proper(
         controller_mac, args.device_mac,
-        args.device_name, rtu_config
+        args.device_name, controller_name, rtu_config
     )
 
     # Build complete packet
