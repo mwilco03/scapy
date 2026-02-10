@@ -502,10 +502,23 @@ def main():
     except Exception:
         rtu_config = {}
 
-    if rtu_config:
+    if rtu_config and rtu_config.get('slot_count', 0) > 0:
         print(f"[INFO] RTU has {rtu_config.get('slot_count', 0)} application slot(s)\n")
     else:
-        print(f"[WARNING] Could not get RTU config\n")
+        print(f"[WARNING] Could not get RTU config - using known configuration for {args.device_ip}")
+        # Hardcode known RTU configuration (Slot 1.1: Module 0x40, Submodule 0x41)
+        rtu_config = {
+            'slot_count': 1,
+            'slots': [{
+                'slot': 1,
+                'subslot': 1,
+                'module_ident': 0x00000040,
+                'submodule_ident': 0x00000041,
+                'direction': 'input',
+                'data_size': 5
+            }]
+        }
+        print(f"[INFO] Using Slot 1.1 (Module 0x00000040, Submodule 0x00000041, input, 5 bytes)\n")
 
     # Build Connect Request
     print(f"[INFO] === Building Connect Request ===\n")
